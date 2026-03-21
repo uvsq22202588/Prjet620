@@ -172,7 +172,7 @@ def simuler(machine, mot_entree, debug=True):
     while config.etat_actuel != machine.etat_final:
         if debug:
             afficher_configuration(config)
-        
+
         # On exécute un pas
         succes = un_pas_de_calcul(machine, config)
         
@@ -195,6 +195,40 @@ def simuler(machine, mot_entree, debug=True):
         
     return config, True
 
+def question_7_encodage(nom_fichier):
+    machine = charger_machine(nom_fichier) #On charge la machine
+    if not machine:
+        return None
+
+    if machine.nb_rubans > 1:   # Machine à un seul ruban seulement
+        print(f"Le codage <M> est fait pour 1 ruban (Fichier: {nom_fichier})")
+
+    # Mapping des états (Initial=0, Final=1 et les autres en binaire)
+    mapping_etats = {machine.etat_initial: "0", machine.etat_final: "1"}
+    autres_etats = sorted(list(machine.etats - {machine.etat_initial, machine.etat_final}))
+    for i, etat in enumerate(autres_etats):
+        # On génère une représentation binaire (ex: 00, 01, 10...)
+        mapping_etats[etat] = bin(i)[2:].zfill(2)
+
+    # On transforme les deplacements de bases avec le nouveau vocabulaire 
+    mapping_dirs = {'r': '>', 'l': '<', 's': '-', '>': '>', '<': '<', '-': '-'}
+    symbole_blanc = "[]" # ducoup ca c'est le carré du nouv vocabulaire
+
+    # Format d'une transition selon l'exemple : etat_in | lu | ecrit | dir | etat_out
+    elements_du_codage = []
+    
+    for (etat_in, syms_lus), (etat_out, syms_ecrits, dirs) in sorted(machine.transitions.items()):
+        # On prend le premier élément de chaque tuple (car k=1)
+        lu = syms_lus[0] if syms_lus[0] != '_' else symbole_blanc
+        ecrit = syms_ecrits[0] if syms_ecrits[0] != '_' else symbole_blanc
+        direction = mapping_dirs[dirs[0].lower()]
+        
+        # On ajoute tout les éléments qu'on a créer à la liste 
+        elements_du_codage.extend([mapping_etats[etat_in],lu,ecrit,direction,mapping_etats[etat_out]])
+   
+    codage_final = "|".join(elements_du_codage)  # On rejoint tout avec le séparateur '|'
+    
+    return codage_final
 
 def teste(fichier, mot):
     machine1 = charger_machine(fichier)
@@ -208,4 +242,12 @@ def teste(fichier, mot):
 if __name__ == "__main__":
     # teste("comparaison.mt", "01#11")
     # teste("mult_unaire.mt", "11#111")
-    teste("recherche_list.mt", "10#00#10#11")
+    #teste("recherche_list.mt", "10#00#10#11")
+    resultat = question_7_encodage("exemple.mt")
+    
+    print("Test Question 7")
+    if resultat:
+        print("Codage généré :")
+        print(resultat)
+    else:
+        print("La machine n'a pas pu être chargée.")
