@@ -24,7 +24,7 @@ def charger_machine(nom_fichier):
     # On lit d'abord pour déterminer le nombre de rubans (k)
     # Dans ce format, le nombre de symboles lus avant '->' donne k
     with open(nom_fichier, 'r') as f:   
-        lignes = [l.strip() for l in f if l.strip() and not l.startswith('//')]
+        lignes = [l.split('//')[0].strip() for l in f if l.split('//')[0].strip()]
     
     # Vérification de sécurité
     if not lignes:
@@ -230,6 +230,25 @@ def question_7_encodage(nom_fichier):
     
     return codage_final
 
+
+def question_8_binaire(codage_q7):
+    """Transforme le codage <M> en binaire pur et donne sa valeur entière (Question 8)"""
+    # Dictionnaire pour transformer les symboles en bits  (4 bits par symbole)
+    table = {
+        '0': '0000', '1': '0001', '|': '0010', '[': '0011',
+        ']': '0100', '<': '0101', '>': '0110', '-': '0111', '#': '1000'
+    }
+    
+    #Conversion caractère par caractère en binaire 
+    codage_bin = ""
+    for char in codage_q7:
+        if char in table:
+            codage_bin += table[char]
+
+    # On transforme la chaine binaire en valeure entiere 
+    valeur_entiere = int(codage_bin, 2) if codage_bin else 0
+    return codage_bin, valeur_entiere
+
 def teste(fichier, mot):
     machine1 = charger_machine(fichier)
     if machine1:
@@ -240,14 +259,23 @@ def teste(fichier, mot):
             print("\nCalcul terminé avec échec.")
 
 if __name__ == "__main__":
-    # teste("comparaison.mt", "01#11")
-    # teste("mult_unaire.mt", "11#111")
-    #teste("recherche_list.mt", "10#00#10#11")
-    resultat = question_7_encodage("exemple.mt")
+    # Liste des machines à tester pour la Question 8
+    fichiers_tests = ["exemple.mt", "comparaison.mt"] 
     
-    print("Test Question 7")
-    if resultat:
-        print("Codage généré :")
-        print(resultat)
-    else:
-        print("La machine n'a pas pu être chargée.")
+    print("=== RÉSOULTATS QUESTION 8 ===")
+    
+    for fichier in fichiers_tests:
+        print(f"\n--- Machine : {fichier} ---")
+        
+        # Récupération du codage Q7
+        code_q7 = question_7_encodage(fichier)
+        if code_q7:
+            print(f"Codage <M> : {code_q7}")
+            
+            # Conversion Q8
+            code_bin, valeur = question_8_binaire(code_q7)
+            
+            print(f"Codage Binaire : {code_bin[:80]}...") # On coupe car c'est long
+            print(f"Valeur entière : {valeur}")
+        else:
+            print("Erreur lors du chargement ou du codage.")
