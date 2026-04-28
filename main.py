@@ -249,6 +249,155 @@ def question_8_binaire(codage_q7):
     valeur_entiere = int(codage_bin, 2) if codage_bin else 0
     return codage_bin, valeur_entiere
 
+def simuler_machine_universelle(code_m, entree_x, debug=True):
+    """
+    Implémentation de la Question 9 :
+    Simule une machine M (décrite par code_m) sur l'entrée entree_x.
+    """
+    # 1. Préparation des rubans
+    # Ruban 1 : <M>#x
+    ruban1 = list(f"{code_m}#{entree_x}")
+    # Ruban 2 : contient x (ruban de travail de M)
+    ruban2 = list(entree_x) if entree_x else ["_"]
+    # Ruban 3 : état actuel de M (commence à '0')
+    ruban3 = ["0"]
+
+    # On crée une configuration à 3 rubans pour la MTU
+    config_mtu = Configuration(
+        etat_actuel="START_UNI",
+        rubans=[ruban1, ruban2, ruban3],
+        tetes=[0, 0, 0]
+    )
+
+    # Analyse du code <M> pour extraire les transitions
+    # Format attendu : etat_in|lu|ecrit|dir|etat_out
+    transitions_m = []
+    parties = code_m.split('|')
+    for i in range(0, len(parties), 5):
+        if i + 4 < len(parties):
+            transitions_m.append({
+                'q_in': parties[i],
+                'lu': parties[i+1],
+                'ecrit': parties[i+2],
+                'dir': parties[i+3],
+                'q_out': parties[i+4]
+            })
+
+    # 2. Boucle de simulation
+    while "".join(config_mtu.rubans[2]) != "1":  # Tant que l'état sur Ruban 3 n'est pas '1'
+        etat_m = "".join(config_mtu.rubans[2])
+        # On lit le symbole sur le ruban 2 (celui de M)
+        pos_m = config_mtu.tetes[1]
+        symbole_m = config_mtu.rubans[1][pos_m] if pos_m < len(config_mtu.rubans[1]) else "_"
+        
+        # Traduction du symbole vide pour le codage <M>
+        symbole_cherche = "[]" if symbole_m == "_" else symbole_m
+
+        # Recherche de la transition correspondante
+        trans_trouvee = None
+        for t in transitions_m:
+            if t['q_in'] == etat_m and t['lu'] == symbole_cherche:
+                trans_trouvee = t
+                break
+        
+        if not trans_trouvee:
+            print(f"MTU : Pas de transition pour l'état {etat_m} et symbole {symbole_m}")
+            break
+
+        # Application de la transition
+        # Mise à jour du ruban 3 (état)
+        config_mtu.rubans[2] = list(trans_trouvee['q_out'])
+        
+        # Mise à jour du ruban 2 (travail)
+        symbole_a_ecrire = "_" if trans_trouvee['ecrit'] == "[]" else trans_trouvee['ecrit']
+        config_mtu.rubans[1][pos_m] = symbole_a_ecrire
+        
+        # Déplacement tête ruban 2
+        d = trans_trouvee['dir']
+        if d == ">": config_mtu.tetes[1] += 1
+        elif d == "<": config_mtu.tetes[1] = max(0, config_mtu.tetes[1] - 1)
+
+        if debug:
+            print(f"Simulation M : État {etat_m} -> {trans_trouvee['q_out']} | Ruban2: {''.join(config_mtu.rubans[1])}")
+
+    return config_mtu.rubans[1] # Retourne le résultat final sur le ruban de simulation
+
+def simuler_mtu_avec_compteur(code_m, entree_x, n, debug=True):
+    """
+    Question 10 : Machine Universelle avec gestion d'un compteur d'étapes.
+    L'entrée est <M>#x#n. On simule M sur x pendant n étapes maximum.
+    """
+    # 1. Initialisation des 4 rubans
+    ruban1 = list(f"{code_m}#{entree_x}#{n}") # Code + entrée + n
+    ruban2 = list(entree_x) if entree_x else ["_"] # Travail de M
+    ruban3 = ["0"] # État actuel de M
+    ruban4 = ["1"] * n # Compteur : n bâtons (unaire) pour n étapes 
+
+    config_mtu = Configuration(
+        etat_actuel="START_COUNT",
+        rubans=[ruban1, ruban2, ruban3, ruban4],
+        tetes=[0, 0, 0, 0]
+    )
+
+    # Parsing des transitions (identique à Q9)
+    transitions_m = []
+    parties = code_m.split('|')
+    for i in range(0, len(parties), 5):
+        if i + 4 < len(parties):
+            transitions_m.append({
+                'q_in': parties[i], 'lu': parties[i+1],
+                'ecrit': parties[i+2], 'dir': parties[i+3], 'q_out': parties[i+4]
+            })
+
+    # 2. Boucle de simulation avec vérification du compteur
+    etapes_faites = 0
+    
+    # On s'arrête si : état final '1' OU compteur vide (ruban 4 fini)
+    while "".join(config_mtu.rubans[2]) != "1" and etapes_faites < n:
+        etat_m = "".join(config_mtu.rubans[2])
+        pos_m = config_mtu.tetes[1]
+        
+        # Lecture sur ruban de travail
+        symbole_m = config_mtu.rubans[1][pos_m] if pos_m < len(config_mtu.rubans[1]) else "_"
+        symbole_cherche = "[]" if symbole_m == "_" else symbole_m
+
+        # Recherche transition
+        trans = next((t for t in transitions_m if t['q_in'] == etat_m and t['lu'] == symbole_cherche), None)
+        
+        if not trans:
+            print(f"Arrêt : Pas de transition trouvée.")
+            break
+
+        # --- EXÉCUTION DU PAS ---
+        # Mise à jour État (Ruban 3)
+        config_mtu.rubans[2] = list(trans['q_out'])
+        
+        # Mise à jour Travail (Ruban 2)
+        config_mtu.rubans[1][pos_m] = "_" if trans['ecrit'] == "[]" else trans['ecrit']
+        
+        # Déplacement tête Ruban 2
+        if trans['dir'] == ">": config_mtu.tetes[1] += 1
+        elif trans['dir'] == "<": config_mtu.tetes[1] = max(0, config_mtu.tetes[1] - 1)
+
+        # --- GESTION DU COMPTEUR (Ruban 4) ---
+        # On "consomme" une étape sur le ruban 4 
+        if config_mtu.tetes[3] < len(config_mtu.rubans[3]):
+            config_mtu.rubans[3][config_mtu.tetes[3]] = "." # On marque l'étape comme faite
+            config_mtu.tetes[3] += 1
+        
+        etapes_faites += 1
+
+        if debug:
+            print(f"Étape {etapes_faites}/{n} | État M: {etat_m} | Symbole: {symbole_m}")
+
+    # Conclusion de la simulation
+    if etapes_faites >= n and "".join(config_mtu.rubans[2]) != "1":
+        print(f"\nSTOP : Limite de {n} étapes atteinte. M ne s'est pas arrêtée.")
+    elif "".join(config_mtu.rubans[2]) == "1":
+        print(f"\nSUCCÈS : M s'est arrêtée en {etapes_faites} étapes.")
+
+    return config_mtu.rubans[1]
+
 def teste(fichier, mot):
     machine1 = charger_machine(fichier)
     if machine1:
@@ -279,3 +428,38 @@ if __name__ == "__main__":
             print(f"Valeur entière : {valeur}")
         else:
             print("Erreur lors du chargement ou du codage.")
+    # 1. On choisit une machine à simuler (ex: comparaison.mt)
+    fichier_machine = "comparaison.mt"
+    mot_test = "10#11"  # Exemple d'entrée x pour la machine M
+    
+    print(f"=== TEST QUESTION 9 : MACHINE UNIVERSELLE ===")
+    
+    # 2. On génère le codage <M> via ta fonction de la Question 7 [cite: 36]
+    code_m = question_7_encodage(fichier_machine)
+    
+    if code_m:
+        print(f"Codage <M> récupéré : {code_m}")
+        print(f"Entrée x : {mot_test}")
+        print("-" * 30)
+        
+        # 3. Appel de la fonction de la Question 9 
+        # Elle va simuler M sur x en utilisant les 3 rubans
+        resultat_ruban = simuler_machine_universelle(code_m, mot_test, debug=True)
+        
+        # 4. Affichage du résultat final laissé sur le ruban de simulation
+        print("-" * 30)
+        print(f"Résultat final sur le ruban de simulation : {''.join(resultat_ruban)}")
+    else:
+        print("Erreur : Impossible de générer le codage de la machine.")
+
+    # Paramètres de test
+    fichier = "comparaison.mt"
+    mot = "110#111"
+    nb_etapes_max = 50 # Le 'n' de la question 10 
+    
+    code_m = question_7_encodage(fichier)
+    
+    if code_m:
+        print(f"=== TEST QUESTION 10 (Limite: {nb_etapes_max} étapes) ===")
+        resultat = simuler_mtu_avec_compteur(code_m, mot, nb_etapes_max)
+        print(f"Ruban final : {''.join(resultat)}")
