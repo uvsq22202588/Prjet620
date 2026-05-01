@@ -1,4 +1,5 @@
 import re
+import sys
 
 class MT:
     def __init__(self, nb_rubans):
@@ -407,59 +408,81 @@ def teste(fichier, mot):
         else:
             print("\nCalcul terminé avec échec.")
 
-if __name__ == "__main__":
-    # Liste des machines à tester pour la Question 8
-    fichiers_tests = ["exemple.mt", "comparaison.mt"] 
-    
-    print("=== RÉSOULTATS QUESTION 8 ===")
-    
-    for fichier in fichiers_tests:
-        print(f"\n--- Machine : {fichier} ---")
-        
-        # Récupération du codage Q7
-        code_q7 = question_7_encodage(fichier)
-        if code_q7:
-            print(f"Codage <M> : {code_q7}")
-            
-            # Conversion Q8
-            code_bin, valeur = question_8_binaire(code_q7)
-            
-            print(f"Codage Binaire : {code_bin[:80]}...") # On coupe car c'est long
-            print(f"Valeur entière : {valeur}")
-        else:
-            print("Erreur lors du chargement ou du codage.")
-    # 1. On choisit une machine à simuler (ex: comparaison.mt)
-    fichier_machine = "comparaison.mt"
-    mot_test = "10#11"  # Exemple d'entrée x pour la machine M
-    
-    print(f"=== TEST QUESTION 9 : MACHINE UNIVERSELLE ===")
-    
-    # 2. On génère le codage <M> via ta fonction de la Question 7 [cite: 36]
-    code_m = question_7_encodage(fichier_machine)
-    
-    if code_m:
-        print(f"Codage <M> récupéré : {code_m}")
-        print(f"Entrée x : {mot_test}")
-        print("-" * 30)
-        
-        # 3. Appel de la fonction de la Question 9 
-        # Elle va simuler M sur x en utilisant les 3 rubans
-        resultat_ruban = simuler_machine_universelle(code_m, mot_test, debug=True)
-        
-        # 4. Affichage du résultat final laissé sur le ruban de simulation
-        print("-" * 30)
-        print(f"Résultat final sur le ruban de simulation : {''.join(resultat_ruban)}")
-    else:
-        print("Erreur : Impossible de générer le codage de la machine.")
 
-    # Paramètres de test
-    fichier = "comparaison.mt"
-    mot = "110#111"
-    nb_etapes_max = 50 # Le 'n' de la question 10 
-    
-    code_m = question_7_encodage(fichier)
-    
-    if code_m:
-        print(f"=== TEST QUESTION 10 (Limite: {nb_etapes_max} étapes) ===")
-        resultat = simuler_mtu_avec_compteur(code_m, mot, nb_etapes_max)
-        print(f"Ruban final : {''.join(resultat)}")
+def executer_menu():
+    print("\n=== MENU DE TEST - PROJET MACHINE UNIVERSELLE ===")
+    print("1.  Q1-Q5 : Simulation d'une MT (exemple.mt)")
+    print("6a. Q6 : Comparaison Binaire (comparaison.mt)")
+    print("6b. Q6 : Recherche Liste (recherche_list.mt)")
+    print("6c. Q6 : Multiplication Unaire (mult_unaire.mt)")
+    print("7-8. Q7-Q8 : Encodage <M> et binaire")
+    print("9.  Q9 : Machine Universelle (3 rubans)")
+    print("10. Q10 : Machine Universelle avec Compteur (4 rubans)")
+    print("exit. Quitter")
+
+    while True:
+        choix = input("\nEntrez le numéro de la question à tester (ou 'exit') : ").strip().lower()
+
+        if choix == 'exit':
+            break
+
+        try:
+            if choix == '1':
+                print("--- Test Simulation simple (exemple.mt) ---")
+                # Utilise ta fonction de test existante
+                teste("exemple.mt", "0011")
+
+            elif choix == '6a':
+                print("--- Test Comparaison (10#11 -> s'arrête car 2 < 3) ---")
+                teste("comparaison.mt", "10#11")
+
+            elif choix == '6b':
+                print("--- Test Recherche Liste (10#01#10#11 -> s'arrête car 10 est présent) ---")
+                teste("recherche_list.mt", "10#01#10#11")
+
+            elif choix == '6c':
+                print("--- Test Multiplication Unaire (11#111 -> 111111) ---")
+                teste("mult_unaire.mt", "11#111")
+
+            elif choix in ['7', '8']:
+                fichiers = ["exemple.mt", "comparaison.mt"]
+                for f in fichiers:
+                    print(f"\nMachine : {f}")
+                    code_q7 = question_7_encodage(f)
+                    if code_q7:
+                        print(f"Codage <M> : {code_q7}")
+                        code_bin, val = question_8_binaire(code_q7)
+                        print(f"Binaire (début) : {code_bin[:50]}...")
+                        print(f"Valeur entière : {val}")
+
+            elif choix == '9':
+                code_m = question_7_encodage("comparaison.mt")
+                entree = "10#11"
+                print(f"Simulation de comparaison.mt sur {entree} via MTU...")
+                res = simuler_machine_universelle(code_m, entree, debug=True)
+                print(f"Résultat final : {''.join(res)}")
+
+            elif choix == '10':
+                code_m = question_7_encodage("comparaison.mt")
+                entree = "110#111"
+                n = 50
+                print(f"Simulation avec compteur (n={n}) sur {entree}...")
+                res = simuler_mtu_avec_compteur(code_m, entree, n)
+                print(f"Ruban final : {''.join(res)}")
+
+            else:
+                # Utilisation de eval(input()) si tu veux exécuter du code Python brut 
+                print(f"Exécution de la commande personnalisée : {choix}")
+                eval(choix)
+
+        except Exception as e:
+            print(f"Erreur lors de l'exécution : {e}")
+
+if __name__ == "__main__":
+    # Pour répondre à la consigne "lancer en une ligne de commande"
+    # On peut soit lancer le menu, soit passer un argument.
+    if len(sys.argv) > 1:
+        # Exemple : python main.py "teste('exemple.mt','0101')"
+        eval(sys.argv[1])
+    else:
+        executer_menu()
