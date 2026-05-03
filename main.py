@@ -2,456 +2,337 @@ import sys
 
 class MT:
     def __init__(self, nb_rubans):
-        self.nb_rubans = nb_rubans #
-        self.etats = set()         # Ensemble des noms d'états
-        self.etat_initial = "I"    # Par défaut "I"
-        self.etat_final = "F"      # Par défaut "F"
-        self.alphabet_travail = {'0', '1', '#', '_', '.'}
-        
-        # Les transitions seront stockées ainsi : 
-        # {(etat_depuis, (caractères_lus)): (nouvel_etat, (caractères_écrits), (directions))}
+        self.nb_rubans = nb_rubans
+        self.etats = set()
+        self.etat_initial = "I"
+        self.etat_final = "F"
+        # dico des transitions format : (etat, lus) -> (nouvel_etat, ecrits, directions)
         self.transitions = {}
 
 class Configuration:
     def __init__(self, etat_actuel, rubans=None, tetes=None):
         self.etat_actuel = etat_actuel
-        # Chaque ruban est une liste de caractères pour pouvoir les modifier facilement
         self.rubans = rubans if rubans else []
-        # Position de la tête sur chaque ruban (index 0 par défaut)
         self.tetes = tetes if tetes else [0] * len(self.rubans)
 
 def charger_machine(nom_fichier):
-    # On lit d'abord pour déterminer le nombre de rubans (k)
-    # Dans ce format, le nombre de symboles lus avant '->' donne k
-    with open(nom_fichier, 'r') as f:
-        lignes = [l.split('//')[0].strip() for l in f if l.split('//')[0].strip()]
-    
-    # Vérification de sécurité
-    if not lignes:
-        print(f"Erreur : Le fichier {nom_fichier} est vide ou ne contient aucune transition valide.")
+    try:
+        with open(nom_fichier, 'r') as f:
+            lignes = [l.split('//')[0].strip() for l in f if l.split('//')[0].strip()]
+    except Exception:
+        print(f"Impossible de lire le fichier {nom_fichier}")
         return None
     
-    # Analyse de la première transition pour déduire k
-    premiere_transition = lignes[0].split('->')[0].split(',')
-    k = len(premiere_transition) - 1
+    if not lignes:
+        return None
     
-    ma_mt = MT(nb_rubans=k)
+    # On déduit k de la première ligne
+    k = len(lignes[0].split('->')[0].split(',')) - 1
+    mt = MT(k)
     
     for ligne in lignes:
         if '->' not in ligne:
             continue
-        # On sépare la partie gauche et droite de la flèche
+            
         gauche, droite = ligne.split('->')
+        el_g = [e.strip() for e in gauche.split(',')]
+        el_d = [e.strip() for e in droite.split(',')]
         
-        # Partie gauche : etat, s1, s2...
-        elements_g = [e.strip() for e in gauche.split(',')]
-        etat_depuis = elements_g[0]
-        symboles_lus = tuple(elements_g[1:])
+        etat_in = el_g[0]
+        lus = tuple(el_g[1:])
         
-        # Partie droite : nouvel_etat, e1, e2..., d1, d2...
-        elements_d = [e.strip() for e in droite.split(',')]
-        nouvel_etat = elements_d[0]
-        # On sépare les symboles écrits des directions
-        symboles_ecrits = tuple(elements_d[1:1+k])
-        directions = tuple(elements_d[1+k:])
+        etat_out = el_d[0]
+        ecrits = tuple(el_d[1:1+k])
+        dirs = tuple(el_d[1+k:])
         
-        # On remplit le dictionnaire de la machine [cite: 16]
-        ma_mt.transitions[(etat_depuis, symboles_lus)] = (nouvel_etat, symboles_ecrits, directions)
-        ma_mt.etats.add(etat_depuis)
-        ma_mt.etats.add(nouvel_etat)
+        mt.transitions[(etat_in, lus)] = (etat_out, ecrits, dirs)
+        mt.etats.add(etat_in)
+        mt.etats.add(etat_out)
         
-    return ma_mt
+    return mt
 
-def creer_configuration_initiale(machine, mot_entree):
-    # Le ruban 1 contient le mot, les autres rubans (k-1) sont vides
-    rubans = []
+def creer_config_initiale(machine, mot):
+    rubans = [list(mot) if mot else ['_']]
     
-    # Premier ruban avec le mot d'entrée
-    rubans.append(list(mot_entree) if mot_entree else ['_'])
-    
-    # Rubans additionnels vides (on met au moins un symbole vide)
+    # On complète avec des rubans vides
     for _ in range(machine.nb_rubans - 1):
         rubans.append(['_'])
     
-    # Toutes les têtes de lecture sont à la position 0
     tetes = [0] * machine.nb_rubans
-    
-    return Configuration(etat_actuel="I", rubans=rubans, tetes=tetes)
+    return Configuration("I", rubans, tetes)
 
 def un_pas_de_calcul(machine, config):
-    # 1. Lecture des symboles sous les têtes
-    symboles_lus = []
+    lus = []
     for i in range(machine.nb_rubans):
         pos = config.tetes[i]
-        # Si la tête est sur une case existante, on lit, sinon c'est un blanc '_'
         if 0 <= pos < len(config.rubans[i]):
-            symboles_lus.append(config.rubans[i][pos])
+            lus.append(config.rubans[i][pos])
         else:
-            symboles_lus.append('_')
+            lus.append('_')
     
-    symboles_lus = tuple(symboles_lus)
+    cle = (config.etat_actuel, tuple(lus))
     
-    # 2. Recherche de la transition
-    cle = (config.etat_actuel, symboles_lus)
     if cle not in machine.transitions:
-        return False # Arrêt de la machine (pas de transition ou état Final atteint)
+        return False # bloqué
     
-    nouvel_etat, symboles_ecrits, directions = machine.transitions[cle]
-    
-    # 3. Mise à jour de la configuration
+    nouvel_etat, ecrits, dirs = machine.transitions[cle]
     config.etat_actuel = nouvel_etat
     
     for i in range(machine.nb_rubans):
-        # A. Ajustement si la tête est sortie par la gauche au tour précédent
+        # Gestion du ruban infini à gauche
         if config.tetes[i] < 0:
             config.rubans[i].insert(0, '_')
             config.tetes[i] = 0
             
-        # B. Ajustement si la tête pointe au-delà de la fin du ruban
+        # Gestion à droite
         while config.tetes[i] >= len(config.rubans[i]):
             config.rubans[i].append('_')
             
-        # C. Écriture
-        pos = config.tetes[i]
-        config.rubans[i][pos] = symboles_ecrits[i]
+        config.rubans[i][config.tetes[i]] = ecrits[i]
         
-        # D. Déplacement
-        d = directions[i].lower()
-        if d in ['r', '>']:
-            config.tetes[i] += 1
-        elif d in ['l', '<']:
-            config.tetes[i] -= 1
-        # Si 's' ou '-', la tête ne bouge pas
+        d = dirs[i].lower()
+        if d in ['r', '>']: config.tetes[i] += 1
+        elif d in ['l', '<']: config.tetes[i] -= 1
             
     return True
 
-def afficher_configuration(config):
-    """Affiche l'état actuel et le contenu des rubans (Question 5)"""
-    print(f"\nÉtat actuel : {config.etat_actuel}")
+def afficher_config(config):
+    print(f"\nÉtat : {config.etat_actuel}")
     for i, ruban in enumerate(config.rubans):
-        # On crée une représentation visuelle du ruban
         contenu = "".join(ruban)
-        # On place un curseur '^' sous la position de la tête
         curseur = " " * config.tetes[i] + "^"
-        print(f"Ruban {i} : {contenu}")
-        print(f"         {curseur}")
+        print(f"R{i} : {contenu}")
+        print(f"     {curseur}")
 
-def simuler(machine, mot_entree, debug=True):
-    """Simule le calcul jusqu'à l'état final (Question 4)"""
-    # Initialisation
-    config = creer_configuration_initiale(machine, mot_entree)
-    nb_etapes = 0
+def simuler(machine, mot, debug=True):
+    config = creer_config_initiale(machine, mot)
+    etapes = 0
+    
     while config.etat_actuel != machine.etat_final:
-        if debug:
-            afficher_configuration(config)
-        # On exécute un pas
-        succes = un_pas_de_calcul(machine, config)
-        # Si aucune transition n'est trouvée et qu'on n'est pas à l'état final
-        if not succes:
-            print("\nMachine bloquée : aucune transition trouvée.")
+        if debug: afficher_config(config)
+        
+        if not un_pas_de_calcul(machine, config):
+            print("\n=> Arrêt : machine bloquée.")
             return config, False
         
-        nb_etapes += 1
-        
-        # Sécurité pour éviter les boucles infinies pendant tes tests
-        if nb_etapes > 1000:
-            print("\nArrêt : Limite d'étapes atteinte (boucle infinie probable).")
+        etapes += 1
+        if etapes > 1000:
+            print("\n=> Arrêt : boucle infinie probable.")
             return config, False
 
-    # Affichage de la configuration finale
     if debug:
-        print("\n--- État Final Atteint ---")
-        afficher_configuration(config)
+        print("\n--- FIN ---")
+        afficher_config(config)
         
     return config, True
 
-def question_7_encodage(nom_fichier):
-    machine = charger_machine(nom_fichier) #On charge la machine
-    if not machine:
-        return None
+def q7_encodage(nom_fichier):
+    mt = charger_machine(nom_fichier)
+    if not mt: return None
 
-    if machine.nb_rubans > 1:   # Machine à un seul ruban seulement
-        print(f"Le codage <M> est fait pour 1 ruban (Fichier: {nom_fichier})")
-
-    # Mapping des états (Initial=0, Final=1 et les autres en binaire)
-    mapping_etats = {machine.etat_initial: "0", machine.etat_final: "1"}
-    autres_etats = sorted(list(machine.etats - {machine.etat_initial, machine.etat_final}))
-    for i, etat in enumerate(autres_etats):
-        # On génère une représentation binaire (ex: 00, 01, 10...)
-        mapping_etats[etat] = bin(i)[2:].zfill(2)
-
-    # On transforme les deplacements de bases avec le nouveau vocabulaire
-    mapping_dirs = {'r': '>', 'l': '<', 's': '-', '>': '>', '<': '<', '-': '-'}
-    symbole_blanc = "[]" # ducoup ca c'est le carré du nouv vocabulaire
-
-    # Format d'une transition selon l'exemple : etat_in | lu | ecrit | dir | etat_out
-    elements_du_codage = []
+    # Mapping états (0, 1, puis binaire)
+    map_etats = {mt.etat_initial: "0", mt.etat_final: "1"}
+    autres = sorted(list(mt.etats - {mt.etat_initial, mt.etat_final}))
     
-    for (etat_in, syms_lus), (etat_out, syms_ecrits, dirs) in sorted(machine.transitions.items()):
-        # On prend le premier élément de chaque tuple (car k=1)
-        lu = syms_lus[0] if syms_lus[0] != '_' else symbole_blanc
-        ecrit = syms_ecrits[0] if syms_ecrits[0] != '_' else symbole_blanc
-        direction = mapping_dirs[dirs[0].lower()]
+    for i, e in enumerate(autres):
+        map_etats[e] = bin(i)[2:].zfill(2)
+
+    map_dirs = {'r': '>', 'l': '<', 's': '-', '>': '>', '<': '<', '-': '-'}
+    
+    elements = []
+    for (etat_in, lus), (etat_out, ecrits, dirs) in sorted(mt.transitions.items()):
+        lu = lus[0] if lus[0] != '_' else "[]"
+        ecrit = ecrits[0] if ecrits[0] != '_' else "[]"
+        direction = map_dirs[dirs[0].lower()]
         
-        # On ajoute tout les éléments qu'on a créer à la liste 
-        elements_du_codage.extend([mapping_etats[etat_in],lu,ecrit,direction,mapping_etats[etat_out]])
+        elements.extend([map_etats[etat_in], lu, ecrit, direction, map_etats[etat_out]])
    
-    codage_final = "|".join(elements_du_codage)  # On rejoint tout avec le séparateur '|'
-    
-    return codage_final
+    return "|".join(elements)
 
-
-def question_8_binaire(codage_q7):
-    """Transforme le codage <M> en binaire pur et donne sa valeur entière (Question 8)"""
-    # Dictionnaire pour transformer les symboles en bits  (4 bits par symbole)
+def q8_binaire(codage):
     table = {
         '0': '0000', '1': '0001', '|': '0010', '[': '0011',
         ']': '0100', '<': '0101', '>': '0110', '-': '0111', '#': '1000'
     }
     
-    #Conversion caractère par caractère en binaire
-    codage_bin = ""
-    for char in codage_q7:
-        if char in table:
-            codage_bin += table[char]
+    binaire = "".join(table[c] for c in codage if c in table)
+    valeur = int(binaire, 2) if binaire else 0
+    return binaire, valeur
 
-    # On transforme la chaine binaire en valeure entiere
-    valeur_entiere = int(codage_bin, 2) if codage_bin else 0
-    return codage_bin, valeur_entiere
+def simuler_mtu(code_m, entree_x, debug=True):
+    # Ruban 1 : <M>#x, Ruban 2 : x, Ruban 3 : état actuel
+    r1 = list(f"{code_m}#{entree_x}")
+    r2 = list(entree_x) if entree_x else ["_"]
+    r3 = ["0"]
 
-def simuler_machine_universelle(code_m, entree_x, debug=True):
-    """
-    Implémentation de la Question 9 :
-    Simule une machine M (décrite par code_m) sur l'entrée entree_x.
-    """
-    # 1. Préparation des rubans
-    # Ruban 1 : <M>#x
-    ruban1 = list(f"{code_m}#{entree_x}")
-    # Ruban 2 : contient x (ruban de travail de M)
-    ruban2 = list(entree_x) if entree_x else ["_"]
-    # Ruban 3 : état actuel de M (commence à '0')
-    ruban3 = ["0"]
+    config = Configuration("MTU", [r1, r2, r3], [0, 0, 0])
 
-    # On crée une configuration à 3 rubans pour la MTU
-    config_mtu = Configuration(
-        etat_actuel="START_UNI",
-        rubans=[ruban1, ruban2, ruban3],
-        tetes=[0, 0, 0]
-    )
+    # Parsing rapide du code de la machine simulée
+    trans = {}
+    parts = code_m.split('|')
+    for i in range(0, len(parts), 5):
+        if i + 4 < len(parts):
+            trans[(parts[i], parts[i+1])] = (parts[i+2], parts[i+3], parts[i+4])
 
-    # Analyse du code <M> pour extraire les transitions
-    # Format attendu : etat_in|lu|ecrit|dir|etat_out
-    transitions_m = []
-    parties = code_m.split('|')
-    for i in range(0, len(parties), 5):
-        if i + 4 < len(parties):
-            transitions_m.append({
-                'q_in': parties[i],
-                'lu': parties[i+1],
-                'ecrit': parties[i+2],
-                'dir': parties[i+3],
-                'q_out': parties[i+4]
-            })
-
-    # 2. Boucle de simulation
-    while "".join(config_mtu.rubans[2]) != "1":  # Tant que l'état sur Ruban 3 n'est pas '1'
-        etat_m = "".join(config_mtu.rubans[2])
-        # On lit le symbole sur le ruban 2 (celui de M)
-        pos_m = config_mtu.tetes[1]
-        symbole_m = config_mtu.rubans[1][pos_m] if pos_m < len(config_mtu.rubans[1]) else "_"
+    etape = 0
+    while True:
+        etat_m = "".join([c for c in config.rubans[2] if c != "_"])
+        pos2 = config.tetes[1]
         
-        # Traduction du symbole vide pour le codage <M>
-        symbole_cherche = "[]" if symbole_m == "_" else symbole_m
-
-        # Recherche de la transition correspondante
-        trans_trouvee = None
-        for t in transitions_m:
-            if t['q_in'] == etat_m and t['lu'] == symbole_cherche:
-                trans_trouvee = t
-                break
-        
-        if not trans_trouvee:
-            print(f"MTU : Pas de transition pour l'état {etat_m} et symbole {symbole_m}")
-            break
-
-        # Application de la transition
-        # Mise à jour du ruban 3 (état)
-        config_mtu.rubans[2] = list(trans_trouvee['q_out'])
-        
-        # Mise à jour du ruban 2 (travail)
-        symbole_a_ecrire = "_" if trans_trouvee['ecrit'] == "[]" else trans_trouvee['ecrit']
-        config_mtu.rubans[1][pos_m] = symbole_a_ecrire
-        
-        # Déplacement tête ruban 2
-        d = trans_trouvee['dir']
-        if d == ">": config_mtu.tetes[1] += 1
-        elif d == "<": config_mtu.tetes[1] = max(0, config_mtu.tetes[1] - 1)
+        symb = config.rubans[1][pos2] if pos2 < len(config.rubans[1]) else "_"
+        symb_cherche = "[]" if symb == "_" else symb
 
         if debug:
-            print(f"Simulation M : État {etat_m} -> {trans_trouvee['q_out']} | Ruban2: {''.join(config_mtu.rubans[1])}")
+            print(f"MTU {etape} | État: {etat_m} | Lit: {symb} | R2: {''.join(config.rubans[1])}")
 
-    return config_mtu.rubans[1] # Retourne le résultat final sur le ruban de simulation
+        if etat_m == "1":
+            print("=> Succès: la machine a atteint l'état final.")
+            break
 
-def simuler_mtu_avec_compteur(code_m, entree_x, n, debug=True):
-    """
-    Question 10 : Machine Universelle avec gestion d'un compteur d'étapes.
-    L'entrée est <M>#x#n. On simule M sur x pendant n étapes maximum.
-    """
-    # 1. Initialisation des 4 rubans
-    ruban1 = list(f"{code_m}#{entree_x}#{n}") # Code + entrée + n
-    ruban2 = list(entree_x) if entree_x else ["_"] # Travail de M
-    ruban3 = ["0"] # État actuel de M
-    ruban4 = ["1"] * n # Compteur : n bâtons (unaire) pour n étapes
+        if (etat_m, symb_cherche) not in trans:
+            print("=> Bloqué: aucune transition trouvée.")
+            break
 
-    config_mtu = Configuration(
-        etat_actuel="START_COUNT",
-        rubans=[ruban1, ruban2, ruban3, ruban4],
-        tetes=[0, 0, 0, 0]
-    )
+        ecrit, direction, etat_out = trans[(etat_m, symb_cherche)]
 
-    # Parsing des transitions (identique à Q9)
-    transitions_m = []
-    parties = code_m.split('|')
-    for i in range(0, len(parties), 5):
-        if i + 4 < len(parties):
-            transitions_m.append({
-                'q_in': parties[i], 'lu': parties[i+1],
-                'ecrit': parties[i+2], 'dir': parties[i+3], 'q_out': parties[i+4]
-            })
+        config.rubans[2] = list(etat_out)
+        
+        symb_ecrit = "_" if ecrit == "[]" else ecrit
+        while config.tetes[1] >= len(config.rubans[1]):
+            config.rubans[1].append("_")
+            
+        config.rubans[1][config.tetes[1]] = symb_ecrit
+        
+        if direction == ">": config.tetes[1] += 1
+        elif direction == "<": 
+            config.tetes[1] -= 1
+            if config.tetes[1] < 0:
+                config.rubans[1].insert(0, '_')
+                config.tetes[1] = 0
 
-    # 2. Boucle de simulation avec vérification du compteur
-    etapes_faites = 0
+        etape += 1
+
+    return config.rubans[1]
+
+def simuler_mtu_compteur(code_m, entree_x, n, debug=True):
+    n_unaire = "1" * n 
     
-    # On s'arrête si : état final '1' OU compteur vide (ruban 4 fini)
-    while "".join(config_mtu.rubans[2]) != "1" and etapes_faites < n:
-        etat_m = "".join(config_mtu.rubans[2])
-        pos_m = config_mtu.tetes[1]
-        
-        # Lecture sur ruban de travail
-        symbole_m = config_mtu.rubans[1][pos_m] if pos_m < len(config_mtu.rubans[1]) else "_"
-        symbole_cherche = "[]" if symbole_m == "_" else symbole_m
+    r1 = list(f"{code_m}#{entree_x}#{n_unaire}")
+    r2 = list(entree_x) if entree_x else ["_"]
+    r3 = ["0"]
+    r4 = list(n_unaire) if n > 0 else ["_"]
 
-        # Recherche transition
-        trans = next((t for t in transitions_m if t['q_in'] == etat_m and t['lu'] == symbole_cherche), None)
-        
-        if not trans:
-            print(f"Arrêt : Pas de transition trouvée.")
-            break
+    config = Configuration("MTU_COUNT", [r1, r2, r3, r4], [0, 0, 0, 0])
 
-        # --- EXÉCUTION DU PAS ---
-        # Mise à jour État (Ruban 3)
-        config_mtu.rubans[2] = list(trans['q_out'])
-        
-        # Mise à jour Travail (Ruban 2)
-        config_mtu.rubans[1][pos_m] = "_" if trans['ecrit'] == "[]" else trans['ecrit']
-        
-        # Déplacement tête Ruban 2
-        if trans['dir'] == ">": config_mtu.tetes[1] += 1
-        elif trans['dir'] == "<": config_mtu.tetes[1] = max(0, config_mtu.tetes[1] - 1)
+    trans = {}
+    parts = code_m.split('|')
+    for i in range(0, len(parts), 5):
+        if i + 4 < len(parts):
+            trans[(parts[i], parts[i+1])] = (parts[i+2], parts[i+3], parts[i+4])
 
-        # --- GESTION DU COMPTEUR (Ruban 4) ---
-        # On "consomme" une étape sur le ruban 4
-        if config_mtu.tetes[3] < len(config_mtu.rubans[3]):
-            config_mtu.rubans[3][config_mtu.tetes[3]] = "." # On marque l'étape comme faite
-            config_mtu.tetes[3] += 1
+    etape = 0
+    while True:
+        etat_m = "".join([c for c in config.rubans[2] if c != "_"])
+        pos2 = config.tetes[1]
+        pos4 = config.tetes[3]
         
-        etapes_faites += 1
+        symb = config.rubans[1][pos2] if pos2 < len(config.rubans[1]) else "_"
+        symb_cherche = "[]" if symb == "_" else symb
+        symb_cpt = config.rubans[3][pos4] if pos4 < len(config.rubans[3]) else "_"
 
         if debug:
-            print(f"Étape {etapes_faites}/{n} | État M: {etat_m} | Symbole: {symbole_m}")
+            print(f"Étape {etape} | État: {etat_m} | Cpt: {symb_cpt} | R2: {''.join(config.rubans[1])}")
 
-    # Conclusion de la simulation
-    if etapes_faites >= n and "".join(config_mtu.rubans[2]) != "1":
-        print(f"\nSTOP : Limite de {n} étapes atteinte. M ne s'est pas arrêtée.")
-    elif "".join(config_mtu.rubans[2]) == "1":
-        print(f"\nSUCCÈS : M s'est arrêtée en {etapes_faites} étapes.")
+        if etat_m == "1":
+            print(f"=> Succès: fini en {etape} étapes.")
+            break
+            
+        if symb_cpt != "1":
+            print(f"=> Arrêt: compteur vide ({n} étapes max).")
+            break
 
-    return config_mtu.rubans[1]
+        if (etat_m, symb_cherche) not in trans:
+            print("=> Bloqué: pas de transition.")
+            break
+
+        ecrit, direction, etat_out = trans[(etat_m, symb_cherche)]
+
+        config.rubans[2] = list(etat_out)
+        
+        symb_ecrit = "_" if ecrit == "[]" else ecrit
+        while config.tetes[1] >= len(config.rubans[1]):
+            config.rubans[1].append("_")
+        config.rubans[1][config.tetes[1]] = symb_ecrit
+        
+        if direction == ">": config.tetes[1] += 1
+        elif direction == "<": 
+            config.tetes[1] -= 1
+            if config.tetes[1] < 0:
+                config.rubans[1].insert(0, '_')
+                config.tetes[1] = 0
+
+        # Maj du compteur
+        config.rubans[3][pos4] = "." 
+        config.tetes[3] += 1
+        
+        etape += 1
+
+    return config.rubans[1]
 
 def teste(fichier, mot):
-    machine1 = charger_machine(fichier)
-    if machine1:
-        resultat, success = simuler(machine1, mot)
-        if success:
-            print("\nCalcul terminé avec succès.")
-        else:
-            print("\nCalcul terminé avec échec.")
-
+    mt = charger_machine(fichier)
+    if mt:
+        simuler(mt, mot)
 
 def executer_menu():
-    print("\n=== MENU DE TEST - PROJET MACHINE UNIVERSELLE ===")
-    print("1.  Q1-Q5 : Simulation d'une MT (exemple.mt)")
-    print("6a. Q6 : Comparaison Binaire (comparaison.mt)")
-    print("6b. Q6 : Recherche Liste (recherche_list.mt)")
-    print("6c. Q6 : Multiplication Unaire (mult_unaire.mt)")
-    print("7-8. Q7-Q8 : Encodage <M> et binaire")
-    print("9.  Q9 : Machine Universelle (3 rubans)")
-    print("10. Q10 : Machine Universelle avec Compteur (4 rubans)")
-    print("exit. Quitter")
+    print("\n--- MENU PROJET MT ---")
+    print("1.  Q1-Q5 : Simulation (exemple.mt)")
+    print("6a. Q6 : Comparaison (comparaison.mt)")
+    print("6b. Q6 : Recherche (recherche_list.mt)")
+    print("6c. Q6 : Mult unaire (mult_unaire.mt)")
+    print("7-8. Q7/Q8 : Encodage et binaire")
+    print("9.  Q9 : MTU (3 rubans)")
+    print("10. Q10 : MTU avec Compteur (4 rubans)")
+    print("q.  Quitter")
 
     while True:
-        choix = input("\nEntrez le numéro de la question à tester (ou 'exit') : ").strip().lower()
-
-        if choix == 'exit':
-            break
+        choix = input("\nChoix (ou 'q') : ").strip().lower()
+        if choix in ['q', 'quit', 'exit']: break
 
         try:
             if choix == '1':
-                print("--- Test Simulation simple (exemple.mt) ---")
-                # Utilise ta fonction de test existante
                 teste("exemple.mt", "0011")
-
             elif choix == '6a':
-                print("--- Test Comparaison (10#11 -> s'arrête car 2 < 3) ---")
                 teste("comparaison.mt", "10#11")
-
             elif choix == '6b':
-                print("--- Test Recherche Liste (10#01#10#11 -> s'arrête car 10 est présent) ---")
                 teste("recherche_list.mt", "10#01#10#11")
-
             elif choix == '6c':
-                print("--- Test Multiplication Unaire (11#111 -> 111111) ---")
                 teste("mult_unaire.mt", "11#111")
-
             elif choix in ['7', '8']:
-                fichiers = ["exemple.mt", "comparaison.mt"]
-                for f in fichiers:
-                    print(f"\nMachine : {f}")
-                    code_q7 = question_7_encodage(f)
-                    if code_q7:
-                        print(f"Codage <M> : {code_q7}")
-                        code_bin, val = question_8_binaire(code_q7)
-                        print(f"Binaire (début) : {code_bin[:50]}...")
-                        print(f"Valeur entière : {val}")
-
+                for f in ["exemple.mt", "comparaison.mt"]:
+                    code = q7_encodage(f)
+                    if code:
+                        print(f"\nFichier : {f}")
+                        print(f"Code : {code}")
+                        bin_str, val = q8_binaire(code)
+                        print(f"Binaire (début) : {bin_str[:50]}...")
+                        print(f"Valeur : {val}")
             elif choix == '9':
-                code_m = question_7_encodage("comparaison.mt")
-                entree = "10#11"
-                print(f"Simulation de comparaison.mt sur {entree} via MTU...")
-                res = simuler_machine_universelle(code_m, entree, debug=True)
+                code = q7_encodage("comparaison.mt")
+                res = simuler_mtu(code, "1010#1011")
                 print(f"Résultat final : {''.join(res)}")
-
             elif choix == '10':
-                code_m = question_7_encodage("comparaison.mt")
-                entree = "110#111"
-                n = 50
-                print(f"Simulation avec compteur (n={n}) sur {entree}...")
-                res = simuler_mtu_avec_compteur(code_m, entree, n)
+                code = q7_encodage("comparaison.mt")
+                res = simuler_mtu_compteur(code, "110#111", 50)
                 print(f"Ruban final : {''.join(res)}")
-
             else:
-                # Utilisation de eval(input()) si tu veux exécuter du code Python brut
-                print(f"Exécution de la commande personnalisée : {choix}")
+                # petite bidouille pour lancer du code depuis le terminal
                 eval(choix)
-
         except Exception as e:
-            print(f"Erreur lors de l'exécution : {e}")
+            print(f"Erreur : {e}")
 
 if __name__ == "__main__":
-    # Pour répondre à la consigne "lancer en une ligne de commande"
-    # On peut soit lancer le menu, soit passer un argument.
     if len(sys.argv) > 1:
-        # Exemple : python main.py "teste('exemple.mt','0101')"
         eval(sys.argv[1])
     else:
         executer_menu()
